@@ -39,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/azuredisk-csi-driver/pkg/util"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -56,19 +57,23 @@ const (
 
 	diskCSIDriver = "disk.csi.azure.com"
 	pollingDelay  = 5 * time.Second
+
+	snapshotCreationTimeoutKey     = "snapshotCreationTimeout"
+	snapshotCreationTimeoutDefault = 60 * time.Minute
 )
 
 type VolumeSnapshotter struct {
-	log                logrus.FieldLogger
-	disks              *armcompute.DisksClient
-	snaps              *armcompute.SnapshotsClient
-	disksSubscription  string
-	snapsSubscription  string
-	disksResourceGroup string
-	snapsResourceGroup string
-	snapsIncremental   *bool
-	apiTimeout         time.Duration
-	snapsTags          map[string]string
+	log                     logrus.FieldLogger
+	disks                   *armcompute.DisksClient
+	snaps                   *armcompute.SnapshotsClient
+	disksSubscription       string
+	snapsSubscription       string
+	disksResourceGroup      string
+	snapsResourceGroup      string
+	snapsIncremental        *bool
+	apiTimeout              time.Duration
+	snapsTags               map[string]string
+	snapshotCreationTimeout time.Duration
 }
 
 type snapshotIdentifier struct {
@@ -93,6 +98,7 @@ func (b *VolumeSnapshotter) Init(config map[string]string) error {
 		vslConfigKeyIncremental,
 		vslConfigKeyTags,
 		credentialsFileConfigKey,
+		snapshotCreationTimeoutKey,
 	); err != nil {
 		return err
 	}
@@ -118,6 +124,15 @@ func (b *VolumeSnapshotter) Init(config map[string]string) error {
 		b.apiTimeout, err = time.ParseDuration(val)
 		if err != nil {
 			return errors.Wrapf(err, "unable to parse value %q for config key %q (expected a duration string)", val, vslConfigKeyAPITimeout)
+		}
+	}
+	// if config["snapshotCreationTimeout"] is empty, default to 60m; otherwise, parse it
+	if val := config[snapshotCreationTimeoutKey]; val == "" {
+		b.snapshotCreationTimeout = snapshotCreationTimeoutDefault
+	} else {
+		b.snapshotCreationTimeout, err = time.ParseDuration(val)
+		if err != nil {
+			return errors.Wrapf(err, "unable to parse value %q for config key %q (expected a duration string)", val, snapshotCreationTimeoutKey)
 		}
 	}
 
@@ -166,7 +181,7 @@ func (b *VolumeSnapshotter) CreateVolumeFromSnapshot(snapshotID, volumeType, vol
 	}
 
 	// Lookup snapshot info for its Location & Tags so we can apply them to the volume
-	snapshotInfo, err := b.snaps.Get(context.TODO(), snapshotIdentifier.resourceGroup, snapshotIdentifier.name, nil)
+	snapshotInfo, err := b.snapshotWhenAvailable(snapshotID)
 	if err != nil {
 		return "", errors.WithStack(err)
 	}
@@ -211,6 +226,56 @@ func (b *VolumeSnapshotter) CreateVolumeFromSnapshot(snapshotID, volumeType, vol
 		return "", errors.WithStack(err)
 	}
 	return diskName, nil
+}
+
+func (b *VolumeSnapshotter) snapshotWhenAvailable(snapshotID string) (armcompute.SnapshotsClientGetResponse, error) {
+	logger := b.log.WithField("snapshotID", snapshotID)
+
+	var snapshot armcompute.SnapshotsClientGetResponse
+	snapshotIdentifier, err := parseFullSnapshotName(snapshotID)
+	if err != nil {
+		return snapshot, err
+	}
+	err = wait.PollImmediate(time.Second, b.snapshotCreationTimeout, func() (bool, error) {
+		var err error
+		snapshot, err = b.snaps.Get(context.TODO(), snapshotIdentifier.resourceGroup, snapshotIdentifier.name, nil)
+		if err != nil {
+			return true, err
+		}
+		if snapshot.Properties == nil {
+			logger.Debug("snapshot has nil Properties")
+			return true, errors.Errorf("Snapshot has nil Properties")
+		}
+		if snapshot.Properties.ProvisioningState == nil {
+			logger.Debug("snapshot has nil ProvisioningState")
+			return true, errors.Errorf("Snapshot has nil ProvisioningState")
+		}
+		if *snapshot.Properties.ProvisioningState == string("Creating") ||
+			*snapshot.Properties.ProvisioningState == string("Migrating") ||
+			*snapshot.Properties.ProvisioningState == string("Updating") {
+			logger.Debug("snapshot not yet ready for use")
+			return false, nil
+		}
+		if *snapshot.Properties.ProvisioningState == string("Succeeded") {
+			return true, nil
+		}
+		if *snapshot.Properties.ProvisioningState == string("Failed") {
+			logger.Debug("snapshot has 'Failed' ProvisioningState")
+			return true, errors.Errorf("Snapshot has 'Failed' ProvisioningState")
+		}
+		if *snapshot.Properties.ProvisioningState == string("Deleting") {
+			logger.Debug("snapshot has 'Deleting' ProvisioningState")
+			return true, errors.Errorf("Snapshot has 'Deleting' ProvisioningState")
+		}
+		unknownStatus := *snapshot.Properties.ProvisioningState
+		return true, errors.Errorf("Snapshot has unknown ProvisioningState '%s'", unknownStatus)
+	})
+
+	if err == wait.ErrWaitTimeout {
+		logger.Debug("timeout reached waiting for snapshot to be ready")
+	}
+
+	return snapshot, err
 }
 
 func (b *VolumeSnapshotter) GetVolumeInfo(volumeID, volumeAZ string) (string, *int64, error) {
