@@ -167,3 +167,31 @@ func TestGetBlockSize(t *testing.T) {
 	size = getBlockSize(logger, config)
 	assert.Equal(t, 1048570, size)
 }
+
+func TestGetBlockSize(t *testing.T) {
+	logger := logrus.New()
+	config := map[string]string{}
+	// not specified
+	size := getBlockSize(logger, config)
+	assert.Equal(t, defaultBlockSize, size)
+
+	// invalid value specified
+	config[blockSizeConfigKey] = "invalid"
+	size = getBlockSize(logger, config)
+	assert.Equal(t, defaultBlockSize, size)
+
+	// value < 0 specified
+	config[blockSizeConfigKey] = "0"
+	size = getBlockSize(logger, config)
+	assert.Equal(t, defaultBlockSize, size)
+
+	// value > max size specified
+	config[blockSizeConfigKey] = "1048576000"
+	size = getBlockSize(logger, config)
+	assert.Equal(t, maxBlockSize, size)
+
+	// valid value specified
+	config[blockSizeConfigKey] = "1048570"
+	size = getBlockSize(logger, config)
+	assert.Equal(t, 1048570, size)
+}
