@@ -14,16 +14,3 @@ COPY --from=builder /workspace/bin/velero-plugin-for-microsoft-azure /plugins/
 USER 65534:65534
 ENTRYPOINT ["/bin/bash", "-c", "cp /plugins/* /target/."]
 
-LABEL \
-        com.redhat.component="oadp-velero-plugin-for-microsoft-azure-container" \
-        version="1.5.0" \
-        name="oadp/oadp-velero-plugin-for-microsoft-azure-rhel9" \
-        License="Apache License 2.0" \
-        io.k8s.display-name="OADP Velero Plugin for MICROSOFT-AZURE" \
-        io.openshift.tags="migration" \
-        io.k8s.description="OpenShift API for Data Protection - Velero Plugin for MICROSOFT-AZURE" \
-        io.openshift.build.commit.id="b714eda98b383eee22504bb918fef620d5a4de5c" \
-        io.openshift.build.source-location="https://github.com/openshift/velero-plugin-for-microsoft-azure" \
-        io.openshift.build.commit.url="https://github.com/openshift/velero-plugin-for-microsoft-azure/commit/b714eda98b383eee22504bb918fef620d5a4de5c" \
-        summary="OpenShift API for Data Protection - Velero Plugin for MICROSOFT-AZURE" \
-        maintainer="OpenShift API for Data Protection Team <oadp-team@redhat.com>"
