@@ -108,3 +108,5 @@ replace (
 	cloud.google.com/go => cloud.google.com/go v0.104.0
 	k8s.io/kubectl => k8s.io/kubectl v0.25.2
 )
+
+replace github.com/vmware-tanzu/velero => github.com/openshift/velero v0.10.2-0.20250811140114-db545c8e2387
