@@ -11,7 +11,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.11.1
-	github.com/vmware-tanzu/velero v1.14.0
+	github.com/vmware-tanzu/velero v1.14.1
 	k8s.io/api v0.29.0
 	k8s.io/apimachinery v0.29.0
 	sigs.k8s.io/azuredisk-csi-driver v1.26.0
@@ -84,11 +84,12 @@ require (
 // fixes:
 // * go mod tidy: cloud.google.com/go/compute/metadata: ambiguous import: found package cloud.google.com/go/compute/metadata in multiple modules:
 // * go list -modfile=go.mod -m -json -mod=mod all: k8s.io/kubectl@v0.0.0: invalid version: unknown revision v0.0.0
+
+exclude github.com/kcp-dev/kcp/sdk v0.0.0-00010101000000-000000000000
+
 replace (
 	cloud.google.com/go => cloud.google.com/go v0.104.0
 	k8s.io/kubectl => k8s.io/kubectl v0.25.2
 )
 
-replace github.com/vmware-tanzu/velero => github.com/openshift/velero v0.10.2-0.20260708153014-21da6ab34f9e
-
-exclude github.com/kcp-dev/kcp/sdk v0.0.0-00010101000000-000000000000
+replace github.com/vmware-tanzu/velero => github.com/openshift/velero v0.10.2-0.20260806152914-2945c62545ba
