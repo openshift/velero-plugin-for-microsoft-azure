@@ -1,18 +1,30 @@
-FROM --platform=$BUILDPLATFORM quay.io/konveyor/builder:ubi9-latest AS builder
+# FIPS 140-3 Compliance Configuration using Microsoft Go and Azure Linux:
+# - Builder: mcr.microsoft.com/oss/go/microsoft/golang:1.25-azurelinux3.0
+#   Microsoft's Go fork with integrated FIPS support via platform crypto libraries
+# - Runtime: mcr.microsoft.com/azurelinux/distroless/base:3.0
+#   Minimal Azure Linux distroless image with FIPS 140-3 compliance
+# - GOFIPS140=latest: Enables FIPS mode in Microsoft's Go fork
+# - CGO_ENABLED=1: Required for platform-dependent crypto (OpenSSL on Linux)
+# - Plugin processes inherit GODEBUG=fips140=on from parent Velero process
+# - Required to match Velero's FIPS capabilities for regulated OpenShift deployments
+# - Reference: https://github.com/Azure/ARO-HCP/blob/main/frontend/Dockerfile
+
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/oss/go/microsoft/golang:1.25-azurelinux3.0 AS builder
 ARG BUILDPLATFORM
 ARG TARGETOS
 ARG TARGETARCH
 
+ENV APP_ROOT=/opt/app-root
 ENV GOPATH=$APP_ROOT
+ENV CGO_ENABLED=1 GOFIPS140=latest
 
 COPY . $APP_ROOT/src/velero-plugin-for-microsoft-azure
 
 WORKDIR $APP_ROOT/src/velero-plugin-for-microsoft-azure
 
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -v -o $APP_ROOT/bin/velero-plugin-for-microsoft-azure -mod=mod ./velero-plugin-for-microsoft-azure
+RUN CGO_ENABLED=1 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -v -o $APP_ROOT/bin/velero-plugin-for-microsoft-azure -mod=mod ./velero-plugin-for-microsoft-azure
 
-FROM registry.access.redhat.com/ubi9-minimal
-RUN mkdir /plugins
+FROM mcr.microsoft.com/azurelinux/distroless/base:3.0
 COPY --from=builder /opt/app-root/bin/velero-plugin-for-microsoft-azure /plugins/
 USER 65534:65534
 ENTRYPOINT ["/bin/bash", "-c", "cp /plugins/* /target/."]
